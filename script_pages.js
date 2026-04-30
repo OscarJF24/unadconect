@@ -19,11 +19,15 @@ const db = (typeof firebase !== 'undefined') ? firebase.firestore() : null;
 
 // --- SHARED DATA ---
 let students = [];
-let globalParches = []; // Ahora los parches también iniciarán vacíos
+let globalParches = []; 
 let parcheMessages = {};
 let currentParcheId = null;
-let currentProfile = JSON.parse(localStorage.getItem('unad_profile')) || null;
+let currentProfile = null; // Inicia vacío, se cargará de la nube
 let profileCameraStream = null;
+
+// Limpieza inicial de Storage antiguo
+localStorage.removeItem('unad_profile');
+localStorage.removeItem('unad_students');
 
 // Función para LIMPIAR toda tu base de datos de Firebase (Uso manual)
 window.nukeDatabase = async function() {
@@ -224,8 +228,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (db) {
         try {
             startStudentsListener();
+            
+            // Cargar mi perfil desde la nube si existe un ID local
+            const userId = localStorage.getItem('unad_user_id');
+            if (userId) {
+                const doc = await db.collection('students').doc(userId).get();
+                if (doc.exists) {
+                    currentProfile = doc.data();
+                    renderProfileAvatar();
+                    if (window.location.pathname.includes('perfil.html')) {
+                        loadProfileForm();
+                        renderProfilePreview();
+                    }
+                }
+            }
         } catch (error) {
-            console.error("Firebase Init Error:", error);
+            console.error("Cloud Error:", error);
         }
     }
 
@@ -329,18 +347,15 @@ function initProfile() {
             profileData.program = profileData.program || profileData.department;
         }
 
-        // Save locally
-        currentProfile = profileData;
-        localStorage.setItem('unad_profile', JSON.stringify(currentProfile));
-
-        // Save to Cloud
+        // Save ONLY to Cloud
         if (db) {
             try {
                 await db.collection('students').doc(userId).set(profileData, { merge: true });
-                showProfileStatus('Perfil guardado en la nube.');
+                currentProfile = profileData; // Mantener en memoria RAM (no en storage)
+                showProfileStatus('Perfil actualizado en la nube.');
             } catch (e) {
                 console.error("Error saving to Firestore:", e);
-                showProfileStatus('Guardado localmente (Sin conexión a la nube).');
+                showProfileStatus('Error al guardar en la nube.');
             }
         }
 
